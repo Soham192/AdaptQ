@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JugaadFlow — Live Pipeline Dashboard</title>
+    <meta name="description" content="Real-time adaptive data pipeline monitoring for JugaadFlow — queue depths, latency per tier, throughput, shed & defer counters.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+    <link rel="stylesheet" href="/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+    <!-- Header -->
+    <div class="header">
+        <h1>JugaadFlow Pipeline</h1>
+        <button class="btn btn-mode" id="modeBtn" onclick="toggleMode()">Mode: Adaptive</button>
+    </div>
+
+    <!-- Rate Controls -->
+    <div class="rate-controls" id="rateControls">
+        <button class="btn btn-rate" data-rate="1000"  onclick="setRate(1000)">1K/min</button>
+        <button class="btn btn-rate active" data-rate="3400"  onclick="setRate(3400)">3.4K/min</button>
+        <button class="btn btn-rate" data-rate="10000" onclick="setRate(10000)">10K/min</button>
+        <button class="btn btn-rate" data-rate="20000" onclick="setRate(20000)">20K/min</button>
+        <button class="btn btn-rate" data-rate="50000" onclick="setRate(50000)">50K/min</button>
+        <button class="btn btn-rate" data-rate="68000" onclick="setRate(68000)">68K/min (20x)</button>
+        <div class="rate-custom">
+            <input type="number" id="customRate" placeholder="Custom evt/min" min="100" max="340000">
+            <button class="btn btn-set" onclick="setCustomRate()">Set</button>
+        </div>
+    </div>
+
+    <!-- Admin Spike Panel -->
+    <div class="spike-panel" id="spikePanel">
+        <div class="spike-panel-header">
+            <div class="spike-panel-title">
+                <span class="spike-icon">&#9889;</span>
+                Admin Event Spike Control
+            </div>
+            <div class="spike-burst-config">
+                <label class="spike-label" for="spikeBurstSize">Burst size</label>
+                <input type="number" id="spikeBurstSize" value="500" min="10" max="20000" step="100">
+                <label class="spike-label" for="spikeDuration">Duration (s)</label>
+                <input type="number" id="spikeDuration" value="5" min="1" max="30" step="1">
+            </div>
+        </div>
+        <div class="spike-buttons">
+            <button class="spike-btn spike-payment"  id="spikeBtn-payment"   onclick="triggerSpike('payment')">   <span class="spike-btn-icon">&#128179;</span> Payment   </button>
+            <button class="spike-btn spike-order"    id="spikeBtn-order"     onclick="triggerSpike('order')">     <span class="spike-btn-icon">&#128230;</span> Order     </button>
+            <button class="spike-btn spike-inventory" id="spikeBtn-inventory" onclick="triggerSpike('inventory')"> <span class="spike-btn-icon">&#128200;</span> Inventory </button>
+            <button class="spike-btn spike-click"    id="spikeBtn-click"     onclick="triggerSpike('click')">     <span class="spike-btn-icon">&#128432;</span> Click     </button>
+            <button class="spike-btn spike-log"      id="spikeBtn-log"       onclick="triggerSpike('log')">       <span class="spike-btn-icon">&#128196;</span> Log       </button>
+        </div>
+        <div class="spike-active-row" id="spikeActiveRow"></div>
+    </div>
+
+    <!-- Level Bar -->
+    <div class="level-bar level-0" id="levelBar">NORMAL</div>
+
+    <!-- Proof Line -->
+    <div class="proof-line" id="proofLine">Payments shed: 0 &mdash; Critical events protected</div>
+
+    <!-- Latency Cards -->
+    <p class="section-label">Latency per Priority Tier</p>
+    <div class="grid">
+        <div class="card">
+            <h3>Tier 1 &mdash; Payment / Order</h3>
+            <div class="value" id="lat1">&mdash; ms</div>
+            <div class="sub">Critical &mdash; never dropped or deferred</div>
+        </div>
+        <div class="card">
+            <h3>Tier 2 &mdash; Inventory</h3>
+            <div class="value" id="lat2">&mdash; ms</div>
+            <div class="sub">Important &mdash; can defer under pressure</div>
+        </div>
+        <div class="card">
+            <h3>Tier 3 &mdash; Clicks</h3>
+            <div class="value" id="lat3">&mdash; ms</div>
+            <div class="sub">Useful &mdash; can batch or defer</div>
+        </div>
+        <div class="card">
+            <h3>Tier 4 &mdash; Logs</h3>
+            <div class="value" id="lat4">&mdash; ms</div>
+            <div class="sub">Noise &mdash; shed freely</div>
+        </div>
+    </div>
+
+    <!-- Queue Depths + System Stats -->
+    <p class="section-label">Queue Depths &amp; System State</p>
+    <div class="chart-row">
+        <div class="chart-card">
+            <h3>Queue Depths</h3>
+            <div class="queue-bars" id="queueDepths"></div>
+        </div>
+        <div class="card" style="display:flex; flex-direction:column; justify-content:space-evenly; gap:0;">
+            <div>
+                <h3>Backpressure</h3>
+                <div class="value bp-inactive" id="bpStatus">Inactive</div>
+                <div class="sub">Input queue: <span id="inputQ">0</span> / 10,000</div>
+            </div>
+            <div>
+                <h3>Rate Multiplier</h3>
+                <div class="value" id="rateValue" style="font-size:1.5rem">1.0x</div>
+                <div class="sub">Events per minute</div>
+            </div>
+            <div>
+                <h3>Total Processed</h3>
+                <div class="value" id="totalProcessed" style="font-size:1.6rem; color:var(--accent)">0</div>
+                <div class="sub">Events since start</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <p class="section-label">Live Charts</p>
+    <div class="chart-row-3">
+        <div class="chart-card">
+            <h3>Classification Split</h3>
+            <canvas id="classChart"></canvas>
+            <div class="class-rates" id="classRates"></div>
+        </div>
+        <div class="chart-card">
+            <h3>Latency per Tier (ms)</h3>
+            <canvas id="latencyChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Throughput per Tier (events/sec)</h3>
+            <canvas id="throughputChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Counter Tables -->
+    <p class="section-label">Event Counters</p>
+    <div class="grid">
+        <div class="card">
+            <h3>Shed Counts</h3>
+            <div class="counters-grid" id="shedCounters"></div>
+        </div>
+        <div class="card">
+            <h3>Deferred Counts</h3>
+            <div class="counters-grid" id="deferredCounters"></div>
+        </div>
+        <div class="card">
+            <h3>Batched Counts</h3>
+            <div class="counters-grid" id="batchedCounters"></div>
+        </div>
+        <div class="card">
+            <h3>Processed Counts</h3>
+            <div class="counters-grid" id="processedCounters"></div>
+        </div>
+    </div>
+
+    <script src="/dashboard.js"></script>
+</body>
+</html>
